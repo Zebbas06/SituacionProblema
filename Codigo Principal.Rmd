@@ -1,11 +1,11 @@
 ---
 title: "Situacion Problema"
 author: "Sebastian Diaz"
-date: "`r Sys.Date()`"
+date: "r Sys.Date()"
 output: html_document
 ---
-
-```{r setup, include=FALSE}
+ 
+```{r}
 library(seqinr)
 library(ggplot2)
 library(dplyr)
@@ -38,4 +38,58 @@ datos = data.frame(
 file = read.fasta("BA.1_2021.fasta", forceDNAtolower = FALSE)
 file2 = read.fasta("JN.1_2024.fasta", forceDNAtolower = FALSE)
 cat (length(file)%/%12, "vs", length(file2)/12, "secuencias \n")
+
+nMut=1
+for (i in seq_along(file)){
+  if (i==2) next
+  gen = file[[i]]
+  info = attr(gen,"Annot")
+  info = unlist(strsplit(info,"\\[|\\]|:|=|\\."))
+  gene = info[which(info=="gene")+1]
+  
+  if (gene!="S")next
+  
+  cat ("Gen",i,gene,"\n")
+  gen[which(gen=="T")]="U"
+  cat("Total de nucleótidos (Wuhan):", length(gen), "\n")
+
+  
+  for (j in seq(i, length(file2))){
+    
+    gen2 = file2[[j]]
+    info2 = attr(file2[[j]], "Annot")
+    info2 = unlist(strsplit(info2,"\\[|\\]|:|=|\\."))
+    gene2 = info2[which(info2=="gene")+1]
+    if (gene2 != "S") next
+    gen2[which(gen2=="T")]="U"
+      cat("Total de nucleótidos (Comparativa):", length(gen2), "\n")
+    if (length(gen) == length(gen2)){
+      diff = which(gen!=gen2)
+      if (length(diff)>0){ 
+        #cat("Se encontraron mutaciones en las posiciones:", diff, "\n")
+        prevMut=""
+        for (pos in diff){
+          ini = pos - (pos-1)%%3
+          mutacion = paste(gen[pos], "to", gen2[pos], sep="")
+          codOri = paste(gen[ini],gen[ini+1],gen[ini+2],sep="")
+          codMut = paste(gen2[ini],gen2[ini+1],gen2[ini+2],sep="")
+          codonChange = paste(codOri,"to",codMut,sep="")
+          nCod = ((pos-1)%/%3) + 1
+          aminoChange = paste(trad[codOri],nCod,trad[codMut],sep="")
+          if (!is.na(trad[codMut]) && trad[codOri]!=trad[codMut]
+              &&prevMut!=aminoChange){
+            #cat(mutacion,codonChange, aminoChange,nCod,gene,"\n")
+            datos[nMut, ] = list(mutacion,codonChange,aminoChange, nCod, gene)
+            nMut = nMut + 1
+          }
+          prevMut = aminoChange
+        }
+      }
+    }
+  }
+}
+str(datos)
 ```
+
+
+
