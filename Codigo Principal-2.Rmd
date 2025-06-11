@@ -1,0 +1,196 @@
+---
+title: "Situacion Problema"
+author: "Sebastian Diaz"
+date: "r Sys.Date()"
+output: html_document
+---
+ 
+```{r}
+library(seqinr)
+library(ggplot2)
+library(dplyr)
+  
+trad =    c(UUU="F", UUC="F", UUA="L", UUG="L",
+            UCU="S", UCC="S", UCA="S", UCG="S",
+            UAU="Y", UAC="Y", UAA="STOP", UAG="STOP",
+            UGU="C", UGC="C", UGA="STOP", UGG="W",
+            CUU="L", CUC="L", CUA="L", CUG="L",
+            CCU="P", CCC="P", CCA="P", CCG="P",
+            CAU="H", CAC="H", CAA="Q", CAG="Q",
+            CGU="R", CGC="R", CGA="R", CGG="R",
+            AUU="I", AUC="I", AUA="I", AUG="M",
+            ACU="T", ACC="T", ACA="T", ACG="T",
+            AAU="N", AAC="N", AAA="K", AAG="K",
+            AGU="S", AGC="S", AGA="R", AGG="R",
+            GUU="V", GUC="V", GUA="V", GUG="V",
+            GCU="A", GCC="A", GCA="A", GCG="A",
+            GAU="D", GAC="D", GAA="E", GAG="E",
+            GGU="G", GGC="G", GGA="G", GGG="G")
+
+datos= data.frame(
+  mutacion = character(),
+  cambioCodon = character(),
+  cambioAmino = character(),
+  pos = integer(),
+  gen = character()
+)
+
+file = read.fasta("BA.1_2021.fasta", forceDNAtolower = FALSE)
+file2 = read.fasta("JN.1_2024.fasta", forceDNAtolower = FALSE)
+vs = length(file2)/12
+
+
+cat (length(file)%/%12, "vs", length(file2)/12, "secuencias \n")
+nMut=1
+sum(sapply(file, function(x) grepl("surface glycoprotein", attr(x, "Annot"))))
+sum(sapply(file2, function(x) grepl("surface glycoprotein", attr(x, "Annot"))))
+
+for (i in seq_len(min(length(file), length(file2)))){
+    gen = file[[i]]
+   info = attr(gen,"Annot")
+  if (!grepl("surface glycoprotein", info)) next 
+
+  #gene = info[which(info=="gene")+1]
+  
+  #cat ("Gen",i,"Gen spike","\n")
+  gen[which(gen=="T")]="U"
+  #cat("Total de nucleótidos (2021):", length(gen), "\n")
+    gen2 = file2[[i]]
+    info2 = attr(file2[[i]], "Annot")
+    if (!grepl("surface glycoprotein", info2)) next
+    #gene2 = info2[which(info2=="gene")+1]
+ 
+    gen2[which(gen2=="T")]="U"
+    #cat("Total de nucleótidos (2022):", length(gen2), "\n")
+    if (length(gen) == length(gen2)){
+      diff = which(gen!=gen2)
+      if (length(diff)>0){ 
+        #cat("Se encontraron mutaciones en las posiciones:", diff, "\n")
+        prevMut=""
+        for (pos in diff){
+          ini = pos - (pos-1)%%3
+          mutacion = paste(gen[pos], "to", gen2[pos], sep="")
+          codOri = paste(gen[ini],gen[ini+1],gen[ini+2],sep="")
+          codMut = paste(gen2[ini],gen2[ini+1],gen2[ini+2],sep="")
+          codonChange = paste(codOri,"to",codMut,sep="")
+          nCod = ((pos-1)%/%3) + 1
+          aminoChange = paste(trad[codOri],nCod,trad[codMut],sep="")
+          if (!is.na(trad[codMut]) && !is.na(trad[codOri]) &&
+              trad[codOri] != trad[codMut]) {
+            #cat(mutacion,codonChange, aminoChange,nCod,gene,"\n")
+            datos[nMut, ] = list(mutacion,codonChange,aminoChange, nCod, "S")
+            nMut = nMut + 1
+          }
+          prevMut = aminoChange
+          
+
+        }
+      }
+    }
+  }
+
+str(datos)
+summary(datos)
+nrow(datos)
+unique(datos$cambioAmino)
+```
+
+```{r}
+#Gráfica 1
+
+frecuencias <- datos %>%
+  group_by(cambioAmino) %>%
+  summarise(frecuencia = n()) %>%
+  arrange(desc(frecuencia))
+
+# Mostrar las más frecuentes
+print(frecuencias)
+
+mutaciones_frecuentes <- datos %>%
+  count(mutacion, sort = TRUE) %>%
+  filter(n == max(n)) 
+
+datos$resaltada <- datos$mutacion %in% mutaciones_frecuentes$mutacion 
+
+p = ggplot(datos)
+p = p + aes(x = mutacion, fill = resaltada, label = after_stat(count))
+p = p + ggtitle(paste("Cambio de nucleótidos 2020 vs. 2024"))
+p = p + labs(x = "Mutación", y = "Frecuencia", fill = "Categoria")  
+p = p + geom_bar(stat = "count")
+p = p + geom_text(stat = "count", vjust = 0)
+p = p + scale_fill_manual(values = c("gray", "red"), labels = c("Mutaciones","Mutación más frecuente"))
+p
+
+
+```
+
+```{r}
+# GRAFICA 2: CAMBIO DE AMINOACIDO QUE MAS SE REPITE 
+
+library(dplyr)
+
+dfgraph <- datos %>%
+  group_by(cambioAmino) %>%
+  summarise(
+    mutacion = first(mutacion),
+    cambioCodon = first(cambioCodon),
+    pos = first(pos),
+    gen = first(gen),
+    cuenta = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(cuenta)) %>%
+  slice_head(n = 10)
+#dfgraph = filter(
+ # summarise(
+  #  select(
+   #   group_by(datos, cambioAmino),
+    #  mutacion:gen
+  #  ),
+   # mutacion = first(mutacion),
+    #cambioCodon = first(cambioCodon),
+  #  pos = first(pos),
+   # gen = first(gen),
+    #cuenta = n()
+#  ),
+#  cuenta > as.integer(vs*0.5)
+#)
+#cat ("Solo frecuencias superiores al 10%:",as.integer(vs*0.5),"\n")
+#dfgraph <- dfgraph %>%
+ # filter(cuenta > 0.1 * nrow(datos))
+
+max_val <- max(dfgraph$cuenta)
+dfgraph$resaltado <- dfgraph$cuenta == max_val 
+
+#if (nrow(dfgraph) > 0) { 
+ # cambioamino_mas_repetido <- dfgraph %>%
+  #  filter(!is.na(cuenta)) %>%
+   # slice_max(cuenta, n = 1)
+#  dfgraph$resaltado <- dfgraph$cambioAmino == cambioamino_mas_repetido$cambioAmino
+
+ # p3 = ggplot(dfgraph)
+  #p3 = p3 + aes(x = cambioAmino, y = cuenta, fill = resaltado, label = cuenta)
+  #p3 = p3 + ggtitle(paste("Cambio de aminoácidos 2020 vs. 2024"))
+  #p3 = p3 + labs(x = "Cambio de aminoácido", y = "Frecuencia", fill = "Categoria")  
+  #p3 = p3 + geom_bar(stat = "identity")
+  #p3 = p3 + geom_text(stat = "identity", vjust = 1.5)
+  #p3 = p3 + facet_grid(~gen, scales = "free", space = "free_x")
+  #p3 = p3 + scale_fill_manual(values = c("gray", "red"), labels = c("Cambio de aminoácidos", "Cambio de aminoácidos más frecuente"))
+  #print(p3)
+#} else {
+ # cat("No hay suficientes datos con más del 10% de frecuencia para graficar.\n")  
+#}
+
+p3 <- ggplot(dfgraph)
+p3 <- p3 + aes(x = reorder(cambioAmino, -cuenta), y = cuenta, fill = resaltado, label = cuenta)
+p3 <- p3 + ggtitle("Top 10 cambios de aminoácidos 2020 vs. 2024")
+p3 <- p3 + labs(x = "Cambio de aminoácido", y = "Frecuencia", fill = "Categoría")
+p3 <- p3 + geom_bar(stat = "identity")
+p3 <- p3 + geom_text(stat = "identity", vjust = -0.3)
+p3 <- p3 + scale_fill_manual(values = c("gray", "red"), labels = c("Frecuentes", "Más frecuente"))
+p3 <- p3 + theme_minimal()
+print(p3)
+```
+
+
+
